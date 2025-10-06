@@ -26,7 +26,7 @@ st.markdown(
         border-radius: 0 0 15px 15px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-    .stApp { padding-top: 60px; }
+    .stApp { padding-top: 40px; }
     </style>
     <div class="fixed-header">
         <h1 style='color:black; text-align:center; font-family:Arial, sans-serif; margin-bottom:0;'>
@@ -204,4 +204,5 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
 
