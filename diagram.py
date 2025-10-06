@@ -11,6 +11,14 @@ import openpyxl
 # ============================================================
 st.set_page_config(page_title="Energy Data Visualization Dashboard", layout="wide", initial_sidebar_state="expanded")
 
+st.markdown("""
+    <style>
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.markdown(
     """
     <style>
@@ -22,8 +30,8 @@ st.markdown(
         width: 100vw;
         z-index: 1000;
         background-color: #00ffff;
-        padding: 10px 0;
-        border-radius: 0 0 15px 15px;
+        padding: 6px 0;
+        border-radius: 0 0 10px 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     .stApp { padding-top: 40px; }
@@ -204,5 +212,6 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
 
 
