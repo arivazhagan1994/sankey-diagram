@@ -11,14 +11,6 @@ import openpyxl
 # ============================================================
 st.set_page_config(page_title="Energy Data Visualization Dashboard", layout="wide", initial_sidebar_state="expanded")
 
-st.markdown("""
-    <style>
-    [data-testid="collapsedControl"] {
-        display: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 st.markdown(
     """
     <style>
@@ -212,6 +204,7 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
 
 
 
