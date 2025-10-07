@@ -22,16 +22,72 @@ st.markdown(
         width: 100vw;
         z-index: 1000;
         background-color: #00ffff;
-        padding: 6px 0;
+        padding: 10px 0;
         border-radius: 0 0 10px 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
     }
+
+    .fixed-header h1 {
+        color: black;
+        font-family: Arial, sans-serif;
+        font-weight: bold;
+        margin: 0;
+        font-size: clamp(1.2rem, 2vw, 1.8rem);
+    }
+
     .stApp { padding-top: 40px; }
+
+    section[data-testid="stSidebar"] {
+        transform: none !important;
+        visibility: visible !important;
+        width: 18rem !important; /* fixed sidebar width */
+        min-width: 250px !important;
+        max-width: 18rem !important;
+        position: fixed !important;
+        left: 0 !important;
+        top: 40px !important;
+        height: calc(100vh - 40px) !important;
+        z-index: 999 !important;
+        overflow-y: auto !important;
+        background-color: #f0f2f6 !important;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+
+    /* --------- SHIFT MAIN CONTENT --------- */
+    [data-testid="stAppViewContainer"] {
+        margin-left: 18rem !important;
+        transition: margin-left 0.3s ease-in-out;
+        padding right: 1rem !important;
+    }
+
+    @media (max-width: 1024px) {
+        section[data-testid="stSidebar"] {
+            position: fixed !important;
+            z-index: 999 !important;
+            width: 16rem !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            margin-left: 16rem !important;
+        }
+    }
+
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            width: 14rem !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            margin-left: 14rem !important;
+        }
+    }
+
     </style>
     <div class="fixed-header">
-        <h1 style='color:black; text-align:center; font-family:Arial, sans-serif; margin-bottom:0;'>
-            <b>📊 Energy Data Visualization Dashboard</b>
-        </h1>
+        <h1>📊 Energy Data Visualization Dashboard</h1>
     </div>
     """,
     unsafe_allow_html=True
@@ -204,7 +260,3 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
-
-
-
-
