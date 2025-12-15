@@ -189,20 +189,15 @@ def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit 
     mapping = {node: i for i, node in enumerate(nodes)}
 
     node_colors = [px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)] for i in range(len(nodes))]
-    node_values = {node: 0 for node in nodes}
+    node_values = {node: {'in': 0, 'out': 0} for node in nodes}
     for _, row in df.iterrows():
-        val = row[value_col]
-        node_values[row[source_col]] += val
-        node_values[row[target_col]] += val
+        node_values[row[source_col]]['out'] += row[value_col]
+        node_values[row[target_col]]['in'] += row[value_col]
 
-    # Round node values
-    node_values = {node: round(val, 3) for node, val in node_values.items()}
-    
-    # Prepare node labels
-    if unit_col and unit_col in df.columns:
-        node_labels = [f"{node}<br>{node_values.get(node,0)} {df[unit_col].iloc[0]}" for node in nodes]
-    else:
-        node_labels = [f"{node}<br>{node_values.get(node,0)}" for node in nodes]
+    node_values_display = {
+        node: f"In: {round(node_values[node]['in'], 3)}<br>Out: {round(node_values[node]['out'], 3)}"
+        for node in nodes
+    }
 
     link_sources = df[source_col].map(mapping)
     link_targets = df[target_col].map(mapping)
@@ -212,14 +207,14 @@ def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit 
         node=dict(
             pad=15, thickness=20,
             line=dict(color="black", width=0.5),
-            label=node_labels,
+            label=[f"{node}<br>{node_values_display.get(node, '')}" for node in nodes],
             color=node_colors
         ),
         link=dict(
-            source=df[source_col].map(mapping),
-            target=df[target_col].map(mapping),
-            value=df[value_col],
-            color = node_colors
+            source=link_sources,
+            target=link_targets,
+            value=link_values,
+            color = [node_colors[src] for src in link_sources]
         )
     ))
     fig.update_layout(title_text=title, font=dict(size=12, family="Arial"), height=height, margin=dict(l=10, r=10, t=50, b=10))
@@ -264,4 +259,5 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
 
