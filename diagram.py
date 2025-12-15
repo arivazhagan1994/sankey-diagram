@@ -213,9 +213,9 @@ def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit=
         out_value = round(node_values_out[node], 3)
         if unit_col and unit_col in df.columns:
             unit = df[unit_col].iloc[0]  # Assume unit is the same for all rows
-            node_labels.append(f"{node}<br>In: {in_value}")
+            node_labels.append(f"{node}<br>In: {in_value} {unit}<br>Out: {out_value} {unit}")
         else:
-            node_labels.append(f"{node}<br>In: {in_value}")
+            node_labels.append(f"{node}<br>In: {in_value}<br>Out: {out_value}")
     
     # Prepare the Sankey diagram links (sources -> targets)
     link_sources = df[source_col].map(mapping)
@@ -289,4 +289,5 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
 
