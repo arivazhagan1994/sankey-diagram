@@ -204,6 +204,10 @@ def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit 
     else:
         node_labels = [f"{node}<br>{node_values.get(node,0)}" for node in nodes]
 
+    link_sources = df[source_col].map(mapping)
+    link_targets = df[target_col].map(mapping)
+    link_values = df[value_col]
+
     fig = go.Figure(go.Sankey(
         node=dict(
             pad=15, thickness=20,
@@ -260,3 +264,4 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
+
