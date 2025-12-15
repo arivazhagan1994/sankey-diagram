@@ -182,30 +182,51 @@ def select_columns(df):
     return source_col, target_col, value_col
 
 
-def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit = False, title = "Sankey Diagram", height=600):
-    """Plot single Sankey chart."""
+def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit=False, title="Sankey Diagram", height=600):
+    """Plot single Sankey chart with correct node flow representation."""
+    
+    # Ensure the value column is numeric and handle NaNs
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
+
+    # Create a unique list of nodes (source + target)
     nodes = list(set(df[source_col]).union(df[target_col]))
+    
+    # Create a mapping of node names to indices
     mapping = {node: i for i, node in enumerate(nodes)}
 
+    # Node colors
     node_colors = [px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)] for i in range(len(nodes))]
-    node_values = {node: 0 for node in nodes}
+    
+    # Prepare node labels and values for both input and output
+    node_values_in = {node: 0 for node in nodes}
+    node_values_out = {node: 0 for node in nodes}
+    
+    # Calculate flow values for source and target nodes
     for _, row in df.iterrows():
-        node_values[row[source_col]] += row[value_col]
-        node_values[row[target_col]] += row[value_col]
-
-    if unit_col and unit_col in df.columns:
-        node_labels = [f"{node}<br>{node_values.get(node,0)} {df[unit_col].iloc[0]}" for node in nodes]
-    else:
-        node_labels = [f"{node}<br>{node_values.get(node,0)}" for node in nodes]
-
+        node_values_out[row[source_col]] += row[value_col]
+        node_values_in[row[target_col]] += row[value_col]
+    
+    # Prepare the display format for node labels
+    node_labels = []
+    for node in nodes:
+        in_value = round(node_values_in[node], 3)
+        out_value = round(node_values_out[node], 3)
+        if unit_col and unit_col in df.columns:
+            unit = df[unit_col].iloc[0]  # Assume unit is the same for all rows
+            node_labels.append(f"{node}<br>In: {in_value} {unit}<br>Out: {out_value} {unit}")
+        else:
+            node_labels.append(f"{node}<br>In: {in_value}<br>Out: {out_value}")
+    
+    # Prepare the Sankey diagram links (sources -> targets)
     link_sources = df[source_col].map(mapping)
     link_targets = df[target_col].map(mapping)
     link_values = df[value_col]
 
+    # Create the Sankey diagram figure
     fig = go.Figure(go.Sankey(
         node=dict(
-            pad=15, thickness=20,
+            pad=15, 
+            thickness=20,
             line=dict(color="black", width=0.5),
             label=node_labels,
             color=node_colors
@@ -214,10 +235,19 @@ def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit 
             source=link_sources,
             target=link_targets,
             value=link_values,
-            color = [node_colors[src] for src in link_sources]
+            color=[node_colors[src] for src in link_sources]  # Color links by source node color
         )
     ))
-    fig.update_layout(title_text=title, font=dict(size=12, family="Arial"), height=height, margin=dict(l=10, r=10, t=50, b=10))
+
+    # Update the layout with a proper title, font size, and margin
+    fig.update_layout(
+        title_text=title,
+        font=dict(size=12, family="Arial"),
+        height=height,
+        margin=dict(l=10, r=10, t=50, b=10)
+    )
+    
+    # Show the plot using Streamlit
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -259,6 +289,3 @@ if page == "📊 Data Visualization":
                 plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
-
-
-
