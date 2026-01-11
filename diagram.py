@@ -5,6 +5,8 @@ import plotly.express as px
 import re
 import time
 import openpyxl
+import streamlit.components.v1 as components
+import json
 
 # ============================================================
 # ✅ Page Configuration
@@ -146,6 +148,8 @@ if upload_file:
             data = load_data(upload_file, sheet_name=selected_sheet)
 
     if data is not None:
+        data = data.copy()
+        data.columns = data.columns.map(str) # this line adds string conversion to all column headers
         st.session_state["data"] = data
         with st.spinner("Loading data..."):
             time.sleep(0.5)
@@ -155,101 +159,230 @@ if upload_file:
 # ✅ Helper Functions
 # ============================================================
 def detect_month_cols(df):
-    """Detects month or FY columns."""
-    month_cols = []
+    """
+    Returns:
+    1. display_to_real : dict (Apr-25 -> 2025-04-01 00:00:00)
+    2. display_cols    : list for selectbox
+    """
+    display_to_real = {}
+
     for col in df.columns:
         try:
-            dt_col = pd.to_datetime(col)
-            month_cols.append(dt_col.strftime('%b-%y'))
-        except (ValueError, TypeError):
-            month_cols.append(col)
-    df.columns = month_cols
-    month_pattern = r'^[A-Za-z]{3}-\d{2,4}$'
-    month_cols = df.filter(regex=month_pattern, axis=1).columns.tolist()
-    fy_cols = [c for c in df.columns if isinstance(c, str) and c.upper().startswith("FY")]
-    month_cols.extend(fy_cols)
-    return month_cols
+            dt = pd.to_datetime(col)
+            display_name = dt.strftime('%b-%y')
+            display_to_real[display_name] = str(col)
+        except Exception:
+            col_str = str(col)
+            if col_str.upper().startswith("FY"):
+                display_to_real[col_str] = col_str
+
+    return display_to_real, list(display_to_real.keys())
 
 def select_columns(df):
-    """Column selectors shown only once."""
-    st.sidebar.markdown("<h3 style='color:#b24dff;text-align:center;'>Select Columns</h3>", unsafe_allow_html=True)
-    time_cols = detect_month_cols(df)
-    other_cols = [c for c in df.columns if c not in time_cols]
+    st.sidebar.markdown(
+        "<h3 style='color:#b24dff;text-align:center;'>Select Columns</h3>",
+        unsafe_allow_html=True
+    )
 
-    source_col = st.sidebar.selectbox("Source Column", other_cols, index=other_cols.index("Source") if "Source" in other_cols else 0)
-    target_col = st.sidebar.selectbox("Target Column", other_cols, index=other_cols.index("Target") if "Target" in other_cols else 1)
-    value_col = st.sidebar.selectbox("Value Column", time_cols, index=0 if len(time_cols) > 0 else None)
+    month_map, time_cols = detect_month_cols(df)
+    other_cols = [str(c) for c in df.columns if str(c) not in month_map.values()]
+
+    source_col = st.sidebar.selectbox(
+        "Source Column", other_cols,
+        index=other_cols.index("Source") if "Source" in other_cols else 0
+    )
+
+    target_col = st.sidebar.selectbox(
+        "Target Column", other_cols,
+        index=other_cols.index("Target") if "Target" in other_cols else 1
+    )
+
+    display_value_col = st.sidebar.selectbox("Value Column", time_cols)
+
+    # 🔥 REAL COLUMN NAME
+    value_col = month_map[display_value_col]
+
     return source_col, target_col, value_col
 
+def plot_sankey_d3(df, source_col, target_col, value_col, title="Sankey Diagram", height=600):
 
-def plot_sankey(df, source_col, target_col, value_col, unit_col=None, show_unit=False, title="Sankey Diagram", height=600):
-    """Plot single Sankey chart with correct node flow representation."""
-    
-    # Ensure the value column is numeric and handle NaNs
+    df = df.copy()
+    df.columns = df.columns.astype(str)
+    if value_col not in df.columns:
+        st.error(f"Value column '{value_col}' not found in data.")
+        return
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
+    df = df[df[value_col] > 0].copy()
 
-    # Create a unique list of nodes (source + target)
-    nodes = list(set(df[source_col]).union(df[target_col]))
-    
-    # Create a mapping of node names to indices
-    mapping = {node: i for i, node in enumerate(nodes)}
+    df = df[df[source_col] != df[target_col]].copy()
 
-    # Node colors
-    node_colors = [px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)] for i in range(len(nodes))]
-    
-    # Prepare node labels and values for both input and output
-    node_values_in = {node: 0 for node in nodes}
-    node_values_out = {node: 0 for node in nodes}
-    
-    # Calculate flow values for source and target nodes
+    if df.empty:
+        st.warning("⚠️ No data available to plot the Sankey diagram.")
+        return
+
+    # --- Build nodes
+    nodes = list(set(df[source_col]).union(set(df[target_col])))
+    node_index = {n: i for i, n in enumerate(nodes)}
+
+    # ---- calculate node totals
+    node_values = {n: 0 for n in nodes}
     for _, row in df.iterrows():
-        node_values_out[row[source_col]] += row[value_col]
-        node_values_in[row[target_col]] += row[value_col]
-    
-    # Prepare the display format for node labels
-    node_labels = []
-    for node in nodes:
-        in_value = round(node_values_in[node], 3)
-        out_value = round(node_values_out[node], 3)
-        if unit_col and unit_col in df.columns:
-            unit = df[unit_col].iloc[0]  # Assume unit is the same for all rows
-            node_labels.append(f"{node}<br>In: {in_value} {unit}<br>Out: {out_value} {unit}")
-        else:
-            node_labels.append(f"{node}<br>In: {in_value}<br>Out: {out_value}")
-    
-    # Prepare the Sankey diagram links (sources -> targets)
-    link_sources = df[source_col].map(mapping)
-    link_targets = df[target_col].map(mapping)
-    link_values = df[value_col]
+        node_values[row[source_col]] += row[value_col]
+        node_values[row[target_col]] += row[value_col]
 
-    # Create the Sankey diagram figure
-    fig = go.Figure(go.Sankey(
-        node=dict(
-            pad=15, 
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=node_labels,
-            color=node_colors
-        ),
-        link=dict(
-            source=link_sources,
-            target=link_targets,
-            value=link_values,
-            color=[node_colors[src] for src in link_sources]  # Color links by source node color
-        )
-    ))
+    # --- Build links
+    links = []
+    for _, row in df.iterrows():
+        links.append({
+            "source": node_index[row[source_col]],
+            "target": node_index[row[target_col]],
+            "value": float(row[value_col])
+        })
 
-    # Update the layout with a proper title, font size, and margin
-    fig.update_layout(
-        title_text=title,
-        font=dict(size=12, family="Arial"),
-        height=height,
-        margin=dict(l=10, r=10, t=50, b=10)
-    )
-    
-    # Show the plot using Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+    sankey_data = {
+        "nodes": [{"name": n, "value": round(node_values[n], 3)} for n in nodes],
+        "links": links
+    }
 
+    sankey_html = f"""
+    <html>
+    <head>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+        <style>
+            body {{ margin:0; }}
+            text {{ font-family: Arial; font-size: 12px; }}
+            .header{{
+                
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background-color: #f0f2f6;
+                    padding: 10px;
+                    border-radius: 8px;
+                
+            }}
+            .title {{
+                margin: 0;
+                font-size: 1.2em;
+                }}
+            .save-btn{{
+                padding: 8px 18px;
+                cursor: pointer;
+                border-radius: 50px;
+                background-color: #28a745;
+                color: #fff;
+                border: none;
+                font-size: 0.9em;
+                font-weight: bold;
+                transition: background-color 0.3s ease;
+            }}
+            .save-btn:hover{{
+                background-color:  #218838;
+                transform: translateY(-1px);
+            }}
+            .save-btn:active{{
+                transform: scale(0.95);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h3 class="title">{title}</h3>
+            <button class="save-btn" onclick="downloadSVG()">⬇ Save</button>
+        </div>
+        <svg width="100%" height="{height}"></svg>
+
+        <script>
+            const data = {json.dumps(sankey_data)};
+
+            const svg = d3.select("svg");
+            const width = svg.node().getBoundingClientRect().width;
+            const height = +svg.attr("height");
+
+            const sankey = d3.sankey()
+                .nodeWidth(24)
+                .nodePadding(30)
+                .extent([[10, 10], [width - 10, height - 10]]);
+
+            /* ✅ COLOR SCALE — MUST BE BEFORE USE */
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            const graph = sankey(data);
+            const nodes = graph.nodes;
+            const links = graph.links;
+
+            /* ---------- LINKS ---------- */
+            svg.append("g")
+                .selectAll("path")
+                .data(links)
+                .enter()
+                .append("path")
+                .attr("d", d3.sankeyLinkHorizontal())
+                .attr("stroke", function(d) {{ return color(d.source.name); }})
+                .attr("stroke-width", function(d) {{ return Math.max(1, d.width); }})
+                .attr("fill", "none")
+                .attr("opacity", 0.6);
+
+            /* ---------- NODES ---------- */
+            const node = svg.append("g")
+                .selectAll("g")
+                .data(nodes)
+                .enter()
+                .append("g");
+
+            node.append("rect")
+                .attr("x", function(d) {{ return d.x0; }})
+                .attr("y", function(d) {{ return d.y0; }})
+                .attr("height", function(d) {{ return d.y1 - d.y0; }})
+                .attr("width", function(d) {{ return d.x1 - d.x0; }})
+                .attr("fill", function(d) {{ return color(d.name); }});
+
+            /* ---------- LABELS ---------- */
+            node.append("text")
+                .attr("x", function(d) {{ return d.x0 - 6; }})
+                .attr("y", function(d) {{ return (d.y0 + d.y1) / 2; }})
+                .attr("dy", "0.35em")
+                .attr("text-anchor", "end")
+                .text(function(d) {{
+                    return d.name + " (" + (d.value || 0).toFixed(2) + ")";
+                }})
+                .filter(function(d) {{ return d.x0 < width / 2; }})
+                .attr("x", function(d) {{ return d.x1 + 6; }})
+                .attr("text-anchor", "start");
+
+            /* ---------- DOWNLOAD ---------- */
+            function downloadSVG() {{
+                const serializer = new XMLSerializer();
+                const svgStr = serializer.serializeToString(svg.node());
+
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext("2d");
+                const img = new Image();
+
+                img.onload = function() {{
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    const a = document.createElement("a");
+                    a.download = "{title}.png";
+                    a.href = canvas.toDataURL("image/png");
+                    a.click();
+                }};
+
+                img.src = "data:image/svg+xml;base64," +
+                        btoa(unescape(encodeURIComponent(svgStr)));
+            }}
+        </script>
+
+    </body>
+    </html>
+    """
+
+    components.html(sankey_html, height = height+100, scrolling=True)
 
 # ============================================================
 # ✅ Page 1: Data Preview
@@ -261,7 +394,6 @@ if page == "📋 Data Preview":
     else:
         st.info("Upload a file to preview data.")
 
-
 # ============================================================
 # ✅ Page 2: Data Visualization
 # ============================================================
@@ -272,22 +404,20 @@ if page == "📊 Data Visualization":
         source_col, target_col, value_col = select_columns(data)
 
         # ---- Main Sankey
-        plot_sankey(data, source_col, target_col, value_col, "Overall Sankey Diagram", height=800)
+        plot_sankey_d3(data, source_col, target_col, value_col, "Overall Sankey Diagram", height=600)
 
-        # ---- Plant & Material Sankey
+        # ---- Optional Plant & Material Filters
         col1, col2 = st.columns(2)
         with col1:
+
             if "Plant" in data.columns:
                 selected_plant = st.selectbox("Select Plant", sorted(data["Plant"].dropna().unique()))
                 plant_df = data[data["Plant"] == selected_plant]
-                plot_sankey(plant_df, source_col, target_col, value_col, f"Sankey for Plant: {selected_plant}", height=500)
-
+                plot_sankey_d3(plant_df, source_col, target_col, value_col, f"Sankey for Plant: {selected_plant}", height=500)
         with col2:
             if "Material" in data.columns:
                 selected_material = st.selectbox("Select Material", sorted(data["Material"].dropna().unique()))
                 material_df = data[data["Material"] == selected_material]
-                plot_sankey(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
+                plot_sankey_d3(material_df, source_col, target_col, value_col, f"Sankey for Material: {selected_material}", height=500)
     else:
         st.info("Please upload a file to view Sankey diagrams.")
-
-
